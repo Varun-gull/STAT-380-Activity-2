@@ -1,28 +1,307 @@
 ---
 title: "Activity 2"
-auhtor: "Varun Gullanki, Amal Parekh"
+author: "Varun Gullanki, Amal Parekh"
 format: pdf
 editor: visual
+execute:
+  echo: false
+  warning: false
+  message: false
 ---
 
-## Nittany Lion Insurance Dashboard
+```{r}
+#| include: false
+library(tidyverse)
+library(knitr)
+library(broom)
 
-## Code Appendix
+ins <- read_csv("insurance_data_S26.csv") |>
+  mutate(
+    sex = factor(sex),
+    smoker = factor(smoker),
+    region = factor(region),
+    month = factor(month)
+  ) |>
+  drop_na(charges, priorclaims)
+
+m1 <- lm(
+  log(charges) ~ age + sex + bmi + children + smoker + region + month + priorclaims,
+  data = ins
+)
+
+m2 <- lm(
+  log(charges) ~ age + sex + bmi + children + smoker + region + month + priorclaims + smoker:bmi,
+  data = ins
+)
+
+model_results <- tibble(
+  Model = c("Candidate Model 1", "Candidate Model 2"),
+  Adjusted_R_Squared = c(
+    summary(m1)$adj.r.squared,
+    summary(m2)$adj.r.squared
+  )
+)
+
+coef_table_m2 <- tidy(m2) |>
+  select(term, estimate, std.error, statistic, p.value)
+
+summary_table <- ins |>
+  summarise(
+    Mean_Age = mean(age),
+    Mean_BMI = mean(bmi),
+    Mean_Children = mean(children),
+    Mean_PriorClaims = mean(priorclaims),
+    Mean_Charges = mean(charges),
+    Median_Charges = median(charges)
+  )
+```
+
+# Introduction and Background
+
+Nittany Valley Insurance Company asked us to build a predictive model for total insurance charges using information about policyholders. The available variables include age, sex, body mass index, number of children, smoking status, region, month of claim, and number of prior claims. Because the response variable, charges, is quantitative, linear regression based methods are appropriate for this problem.
+
+Our goal is to explore the data carefully, build at least two candidate models, evaluate their performance, and recommend a final model for predicting insurance charges. Since the raw charges are strongly right skewed, we model the natural logarithm of charges rather than raw charges. This transformation reduces skewness, helps stabilize variability, and produces a response that is more suitable for linear regression.
+
+# Data Exploration
+
+Each observation in the dataset represents one insurance policyholder. Before fitting models, we explored the response and the relationships between charges and the available predictors. During data cleaning, we found one incomplete row with missing values for charges and priorclaims, so that row was removed before analysis.
+
+The histogram of raw charges shows substantial right skew, with many moderate cost observations and a smaller number of very large charges. After taking the natural logarithm of charges, the distribution becomes much more symmetric. This supports using log transformed charges as the response.
+
+Exploratory plots also show clear differences between smokers and non smokers. Smokers tend to have much higher insurance charges overall. BMI and age both show positive relationships with charges, and these relationships appear stronger among smokers. Prior claims and number of children also appear related to charges, while month and region show more modest differences. These findings suggest that smoking status, BMI, age, and prior claims are likely to be important predictors in the modeling stage.
 
 ```{r}
+ggplot(ins, aes(x = charges)) +
+  geom_histogram(bins = 40) +
+  labs(
+    title = "Distribution of Raw Insurance Charges",
+    x = "Charges",
+    y = "Count"
+  )
+```
+
+```{r}
+ggplot(ins, aes(x = log(charges))) +
+  geom_histogram(bins = 40) +
+  labs(
+    title = "Distribution of Log Insurance Charges",
+    x = "log(Charges)",
+    y = "Count"
+  )
+```
+
+```{r}
+ggplot(ins, aes(x = smoker, y = charges)) +
+  geom_boxplot() +
+  labs(
+    title = "Insurance Charges by Smoking Status",
+    x = "Smoker",
+    y = "Charges"
+  )
+```
+
+```{r}
+ggplot(ins, aes(x = bmi, y = log(charges), color = smoker)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "BMI and Log Charges by Smoking Status",
+    x = "BMI",
+    y = "log(Charges)"
+  )
+```
+
+```{r}
+ggplot(ins, aes(x = age, y = log(charges))) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Age and Log Insurance Charges",
+    x = "Age",
+    y = "log(Charges)"
+  )
+```
+
+```{r}
+kable(summary_table, digits = 2, caption = "Selected Summary Statistics")
+```
+
+# Modeling Strategy
+
+We fit two candidate multiple linear regression models using log transformed charges as the response.
+
+Candidate Model 1 is a baseline additive model that includes all available predictors:
+
+`log(charges) ~ age + sex + bmi + children + smoker + region + month + priorclaims`
+
+Candidate Model 2 extends the first model by adding an interaction between smoking status and BMI:
+
+`log(charges) ~ age + sex + bmi + children + smoker + region + month + priorclaims + smoker:bmi`
+
+We considered this interaction because exploratory analysis suggested that the relationship between BMI and charges may differ for smokers and non smokers.
+
+# Model Comparison
+
+We compared the two candidate models using adjusted R squared.
+
+```{r}
+kable(model_results, digits = 4, caption = "Adjusted R Squared for Candidate Models")
+```
+
+Candidate Model 1 has an adjusted R squared of approximately 0.755. Candidate Model 2 has an adjusted R squared of approximately 0.772. Since Model 2 has the higher adjusted R squared, including the interaction between smoker and BMI improves the model's ability to explain variation in log insurance charges.
+
+# Interpretation of Key Coefficients
+
+Because the response variable is log transformed charges, each slope coefficient represents an estimated change in the log of expected charges, holding the other predictors constant.
+
+For age, the coefficient is positive, indicating that older policyholders tend to have higher expected insurance charges.
+
+For children, the coefficient is also positive, suggesting that policyholders with more children tend to have higher expected charges.
+
+The smoker by BMI interaction indicates that the relationship between BMI and insurance charges depends on smoking status. In particular, BMI has a stronger association with insurance charges among smokers than among non smokers.
+
+The intercept represents the predicted log insurance charges for a baseline policyholder in the reference categories when all quantitative predictors equal zero. Because some of those values are not realistic in practice, the intercept is less meaningful substantively than the slope coefficients.
+
+```{r}
+kable(coef_table_m2, digits = 4, caption = "Coefficient Estimates for Candidate Model 2")
+```
+
+# Model Diagnostics
+
+We examined regression diagnostic plots for the second model.
+
+```{r}
+par(mfrow = c(2,2))
+plot(m2)
+par(mfrow = c(1,1))
+```
+
+The residual plots show no strong systematic patterns, suggesting that the linear regression assumptions are reasonably satisfied after the log transformation.
+
+# Validation Performance
+
+We evaluated the final model using a separate validation dataset provided by the instructor. Predictions were generated using the final regression model and compared to the observed log insurance charges.
+
+The root mean squared error, or RMSE, on the validation dataset was 0.4002.
+
+RMSE measures the average prediction error of the model in log charge units. This relatively small value suggests that the model predicts insurance charges with reasonable accuracy on new data. This provides additional evidence that the model generalizes well beyond the training dataset.
+
+# Final Recommendation
+
+Based on our analysis, we recommend Candidate Model 2 as the final predictive model for Nittany Valley Insurance Company. Compared with the baseline additive model, Model 2 provides better fit as measured by adjusted R squared.
+
+The most important finding is that the relationship between BMI and insurance charges depends on smoking status. Smoking status, age, BMI, number of children, and prior claims all contribute to predicting insurance charges. Allowing BMI to interact with smoking status provides a more realistic and flexible model.
+
+Because Model 2 improves model fit while remaining interpretable and consistent with patterns observed in the data, it is the strongest choice for predicting insurance charges in this dataset.
+
+# Author Contributions
+
+Varun Gullanki completed the data cleaning, model fitting, and diagnostic analysis.
+
+Amal Parekh completed the exploratory data analysis, interpretation of results, and organization of the written report.
+
+Both authors collaborated on model comparison, final recommendations, and revision of the report.
+
+# Code Appendix
+
+```{r echo=TRUE, eval=FALSE}
 library(tidyverse)
+library(knitr)
+library(broom)
 
-ins <- read_csv("insurance_data_S26.csv")
+ins <- read_csv("insurance_data_S26.csv") |>
+  mutate(
+    sex = factor(sex),
+    smoker = factor(smoker),
+    region = factor(region),
+    month = factor(month)
+  ) |>
+  drop_na(charges, priorclaims)
 
-glimpse(ins)
-summary(ins)
+m1 <- lm(
+  log(charges) ~ age + sex + bmi + children + smoker + region + month + priorclaims,
+  data = ins
+)
 
-ggplot(ins, aes(charges)) +
-  geom_histogram(bins = 40)
-ggplot(ins, aes(log(charges))) +
-  geom_histogram(bins = 40)
+m2 <- lm(
+  log(charges) ~ age + sex + bmi + children + smoker + region + month + priorclaims + smoker:bmi,
+  data = ins
+)
 
-ins <- ins %>%
+model_results <- tibble(
+  Model = c("Candidate Model 1", "Candidate Model 2"),
+  Adjusted_R_Squared = c(
+    summary(m1)$adj.r.squared,
+    summary(m2)$adj.r.squared
+  )
+)
+
+coef_table_m2 <- tidy(m2) |>
+  select(term, estimate, std.error, statistic, p.value)
+
+summary_table <- ins |>
+  summarise(
+    Mean_Age = mean(age),
+    Mean_BMI = mean(bmi),
+    Mean_Children = mean(children),
+    Mean_PriorClaims = mean(priorclaims),
+    Mean_Charges = mean(charges),
+    Median_Charges = median(charges)
+  )
+
+ggplot(ins, aes(x = charges)) +
+  geom_histogram(bins = 40) +
+  labs(
+    title = "Distribution of Raw Insurance Charges",
+    x = "Charges",
+    y = "Count"
+  )
+
+ggplot(ins, aes(x = log(charges))) +
+  geom_histogram(bins = 40) +
+  labs(
+    title = "Distribution of Log Insurance Charges",
+    x = "log(Charges)",
+    y = "Count"
+  )
+
+ggplot(ins, aes(x = smoker, y = charges)) +
+  geom_boxplot() +
+  labs(
+    title = "Insurance Charges by Smoking Status",
+    x = "Smoker",
+    y = "Charges"
+  )
+
+ggplot(ins, aes(x = bmi, y = log(charges), color = smoker)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "BMI and Log Charges by Smoking Status",
+    x = "BMI",
+    y = "log(Charges)"
+  )
+
+ggplot(ins, aes(x = age, y = log(charges))) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Age and Log Insurance Charges",
+    x = "Age",
+    y = "log(Charges)"
+  )
+
+kable(summary_table, digits = 2, caption = "Selected Summary Statistics")
+
+kable(model_results, digits = 4, caption = "Adjusted R Squared for Candidate Models")
+
+kable(coef_table_m2, digits = 4, caption = "Coefficient Estimates for Candidate Model 2")
+
+par(mfrow = c(2,2))
+plot(m2)
+par(mfrow = c(1,1))
+
+val <- read_csv("insurance_data_validation_S26.csv") |>
   mutate(
     sex = factor(sex),
     smoker = factor(smoker),
@@ -30,25 +309,9 @@ ins <- ins %>%
     month = factor(month)
   )
 
-ggplot(ins, aes(smoker, charges)) +
-  geom_boxplot()
+pred <- predict(m2, newdata = val)
 
-m1 <- lm(log(charges) ~ age + sex + bmi + children + smoker + region + month + priorclaims,
-         data = ins)
+rmse <- sqrt(mean((log(val$charges) - pred)^2))
 
-summary(m1)
-
-ggplot(ins, aes(smoker, log(charges))) +
-  geom_boxplot()
-
-m2 <- lm(log(charges) ~ age + sex + bmi + children + smoker +
-           region + month + priorclaims +
-           smoker:bmi,
-         data = ins)
-
-summary(m2)
-
-par(mfrow = c(2,2))
-plot(m2)
-par(mfrow = c(1,1))
+rmse
 ```
